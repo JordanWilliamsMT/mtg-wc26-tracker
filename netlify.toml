@@ -1,0 +1,28 @@
+[build]
+  command = "vite build"
+  publish = "dist"
+  functions = "netlify/functions"
+
+[dev]
+  command = "vite"
+  port = 8888
+  targetPort = 5173
+
+# Scheduled sync — every day at 7am UTC
+[functions."sync"]
+  schedule = "0 7 * * *"
+
+# During tournament: also sync every 5 mins (Netlify will only run if today has games)
+# This is handled inside the sync function itself via a lightweight check
+[functions."poll"]
+  schedule = "*/5 * * * *"
+
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/:splat"
+  status = 200
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
