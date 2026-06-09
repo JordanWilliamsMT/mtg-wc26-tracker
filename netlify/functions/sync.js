@@ -1,13 +1,17 @@
 // netlify/functions/sync.js
 // Runs on schedule (7am UTC daily) + on-demand from admin panel
 // Sources:
-//   Fixtures + Standings → balldontlie.io FIFA WC API (free, key required)
-//   Odds               → the-odds-api.com (free, key required)
+//   Fixtures + Results  → raw.githubusercontent.com/openfootball/worldcup.json (free, no key)
+//   Group Standings     → raw.githubusercontent.com/openfootball/worldcup.json (free, no key)
+//   Odds                → the-odds-api.com (free, key required)
 
 import { getStore } from "@netlify/blobs";
 
-const BDL_BASE = "https://api.balldontlie.io/fifa/worldcup/v1";
+const OPENFOOTBALL_BASE =
+  "https://raw.githubusercontent.com/openfootball/worldcup.json/master/2026";
 const ODDS_BASE = "https://api.the-odds-api.com/v4";
+
+// ─── Banter moment templates ──────────────────────────────────────────────────
 
 function generateMoment({ type, team, participant, opponent, score }) {
   const templates = {
@@ -38,18 +42,12 @@ function generateMoment({ type, team, participant, opponent, score }) {
   return list[Math.floor(Math.random() * list.length)];
 }
 
-async function bdlGet(path, params = {}) {
-  const url = new URL(`${BDL_BASE}${path}`);
-  Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
-  const res = await fetch(url.toString(), {
-    headers: { Authorization: process.env.BDL_API_KEY },
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`BDL ${path} → ${res.status}: ${text.slice(0, 200)}`);
-  }
-  const json = await res.json();
-  return json.data || json;
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+async function fetchJSON(url) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Fetch ${url} → ${res.status}`);
+  return res.json();
 }
 
 async function oddsGet(path, params = {}) {
@@ -60,6 +58,34 @@ async function oddsGet(path, params = {}) {
   if (!res.ok) throw new Error(`Odds API ${path} → ${res.status}`);
   return res.json();
 }
+
+// openfootball round name → our status + round label
+function parseMatch(m) {
+  const hasScore = m.score && m.score.ft && m.score.ft.length === 2;
+  const isGroup =
+    m.group != null ||
+    (m.round && m.round.toLowerCase().startsWith("matchday"));
+
+  // Build a normalised date string (openfootball gives "2026-06-11")
+  const date = m.date
+    ? `${m.date}T${(m.time || "00:00").replace(/\s.*$/, "")}:00Z`
+    : null;
+
+  return {
+    id: `${m.date}-${m.team1}-${m.team2}`.replace(/\s+/g, "-"),
+    date,
+    status: hasScore ? "FT" : "NS",
+    homeTeam: m.team1,
+    awayTeam: m.team2,
+    homeScore: hasScore ? m.score.ft[0] : null,
+    awayScore: hasScore ? m.score.ft[1] : null,
+    round: isGroup ? (m.group ? `Group ${m.group}` : m.round) : m.round || "",
+    venue: m.stadium || "",
+    isGroup,
+  };
+}
+
+// ─── Main sync ────────────────────────────────────────────────────────────────
 
 export default async function handler(req) {
   if (req.method === "POST") {
@@ -78,61 +104,107 @@ export default async function handler(req) {
     const now = new Date();
     const log = [];
 
-    // 1. Fixtures
+    // ── 1. Fixtures ───────────────────────────────────────────────────────────
     log.push("Fetching fixtures...");
-    const fixturesRaw = await bdlGet("/games");
-    const fixtures = fixturesRaw.map((f) => ({
-      id: f.id,
-      date: f.date_time || f.date,
-      status:
-        f.status === "final"
-          ? "FT"
-          : f.status === "in_progress"
-            ? "1H"
-            : f.status === "halftime"
-              ? "HT"
-              : "NS",
-      homeTeam: f.home_team?.name || f.home_team,
-      awayTeam: f.away_team?.name || f.away_team,
-      homeScore: f.home_team_score ?? null,
-      awayScore: f.away_team_score ?? null,
-      round: f.round || f.stage || "",
-      venue: f.venue?.name || f.stadium || "",
-    }));
+    const rawData = await fetchJSON(`${OPENFOOTBALL_BASE}/worldcup.json`);
+    const matches = rawData.matches || [];
+    const fixtures = matches.map(parseMatch);
     await store.setJSON("fixtures", { fixtures, updatedAt: now.toISOString() });
     log.push(`Stored ${fixtures.length} fixtures`);
 
-    // 2. Standings + Odds (skip on live poll)
+    // ── 2. Standings ──────────────────────────────────────────────────────────
     if (!isLivePoll) {
       log.push("Fetching standings...");
-      const standingsRaw = await bdlGet("/group_standings");
-      const groups = {};
-      standingsRaw.forEach((entry) => {
-        const groupName = entry.group?.name || `Group ${entry.group}`;
-        if (!groups[groupName]) groups[groupName] = [];
-        groups[groupName].push({
-          team: entry.team?.name || entry.team,
-          rank: entry.position || groups[groupName].length + 1,
-          pts: entry.points || 0,
-          played: entry.played || 0,
-          won: entry.won || 0,
-          drawn: entry.drawn || 0,
-          lost: entry.lost || 0,
-          gf: entry.goals_for || 0,
-          ga: entry.goals_against || 0,
-          gd: entry.goal_difference || 0,
-          form: entry.form || "",
-        });
-      });
-      Object.keys(groups).forEach((g) =>
-        groups[g].sort((a, b) => a.rank - b.rank),
-      );
-      await store.setJSON("standings", {
-        groups,
-        updatedAt: now.toISOString(),
-      });
-      log.push(`Stored ${Object.keys(groups).length} groups`);
+      try {
+        const groupsRaw = await fetchJSON(
+          `${OPENFOOTBALL_BASE}/worldcup.groups.json`,
+        );
+        const groups = {};
 
+        // openfootball groups format: { "groups": [{ "name": "Group A", "teams": [...] }] }
+        // But we can also compute standings from results ourselves as a fallback
+        const groupList = groupsRaw.groups || [];
+
+        if (groupList.length) {
+          groupList.forEach((g) => {
+            const groupName = g.name || `Group ${g.key}`;
+            // Compute standings from fixtures we already have
+            const groupFixtures = fixtures.filter(
+              (f) => f.round === groupName && f.status === "FT",
+            );
+            const teamStats = {};
+
+            // Seed teams
+            (g.teams || []).forEach((t) => {
+              teamStats[t] = {
+                team: t,
+                pts: 0,
+                played: 0,
+                won: 0,
+                drawn: 0,
+                lost: 0,
+                gf: 0,
+                ga: 0,
+                gd: 0,
+                form: "",
+              };
+            });
+
+            // Calculate from results
+            groupFixtures.forEach((f) => {
+              const h = teamStats[f.homeTeam];
+              const a = teamStats[f.awayTeam];
+              if (!h || !a) return;
+              h.played++;
+              a.played++;
+              h.gf += f.homeScore;
+              h.ga += f.awayScore;
+              a.gf += f.awayScore;
+              a.ga += f.homeScore;
+              if (f.homeScore > f.awayScore) {
+                h.won++;
+                h.pts += 3;
+                a.lost++;
+                h.form += "W";
+                a.form += "L";
+              } else if (f.homeScore < f.awayScore) {
+                a.won++;
+                a.pts += 3;
+                h.lost++;
+                a.form += "W";
+                h.form += "L";
+              } else {
+                h.drawn++;
+                h.pts++;
+                a.drawn++;
+                a.pts++;
+                h.form += "D";
+                a.form += "D";
+              }
+            });
+
+            // Sort by pts → gd → gf
+            const sorted = Object.values(teamStats)
+              .sort(
+                (a, b) =>
+                  b.pts - a.pts || b.gf - b.ga - (a.gf - a.ga) || b.gf - a.gf,
+              )
+              .map((t, i) => ({ ...t, rank: i + 1, gd: t.gf - t.ga }));
+
+            groups[groupName] = sorted;
+          });
+        }
+
+        await store.setJSON("standings", {
+          groups,
+          updatedAt: now.toISOString(),
+        });
+        log.push(`Stored ${Object.keys(groups).length} groups`);
+      } catch (e) {
+        log.push(`Standings fetch failed (non-fatal): ${e.message}`);
+      }
+
+      // ── 3. Odds ─────────────────────────────────────────────────────────────
       log.push("Fetching odds...");
       try {
         const oddsRaw = await oddsGet(
@@ -163,7 +235,7 @@ export default async function handler(req) {
       }
     }
 
-    // 3. Moments
+    // ── 4. Moments ────────────────────────────────────────────────────────────
     log.push("Generating moments...");
     const existingData = await store
       .get("moments", { type: "json" })
@@ -176,6 +248,7 @@ export default async function handler(req) {
     const seenIds = new Set(
       existingMoments.map((m) => m.sourceId).filter(Boolean),
     );
+
     const teamToParticipant = {};
     participants.forEach((p) => {
       if (p.teams?.[0]) teamToParticipant[p.teams[0]] = p.name;
@@ -192,12 +265,9 @@ export default async function handler(req) {
         const awayWon = f.awayScore > f.homeScore;
         const winner = homeWon ? f.homeTeam : awayWon ? f.awayTeam : null;
         const loser = homeWon ? f.awayTeam : awayWon ? f.homeTeam : null;
-        const isKnockout =
-          f.round &&
-          !f.round.toLowerCase().includes("group") &&
-          !f.round.toLowerCase().includes("matchday");
+        const isKnockout = !f.isGroup;
 
-        if (isKnockout && loser)
+        if (isKnockout && loser) {
           newMoments.push({
             id: `${momentId}-elim`,
             sourceId: `${momentId}-elim`,
@@ -210,6 +280,7 @@ export default async function handler(req) {
             timestamp: f.date,
             teams: [loser],
           });
+        }
         if (isKnockout && winner) {
           const stageLabel = (f.round || "")
             .replace("Round of", "R")
@@ -231,7 +302,7 @@ export default async function handler(req) {
           });
         }
         if (
-          !isKnockout &&
+          f.isGroup &&
           f.homeScore !== null &&
           Math.abs(f.homeScore - f.awayScore) >= 3
         ) {
@@ -264,15 +335,13 @@ export default async function handler(req) {
       log.push("No new moments");
     }
 
-    // 4. Meta
+    // ── 5. Meta ───────────────────────────────────────────────────────────────
     const todayStr = now.toISOString().slice(0, 10);
     const gamesToday = fixtures.filter((f) => f.date?.startsWith(todayStr));
     await store.setJSON("meta", {
       lastSync: now.toISOString(),
       hasGamesToday: gamesToday.length > 0,
-      hasLiveGames: gamesToday.some(
-        (f) => f.status === "1H" || f.status === "HT",
-      ),
+      hasLiveGames: false, // openfootball doesn't do live — poll handles nothing on game days
       gamesToday: gamesToday.length,
     });
 
