@@ -1,14 +1,11 @@
 // netlify/functions/sync.js
-// Runs on schedule (7am UTC daily) + on-demand from admin panel
 // Sources:
-//   Fixtures + Results  → raw.githubusercontent.com/openfootball/worldcup.json (free, no key)
-//   Group Standings     → raw.githubusercontent.com/openfootball/worldcup.json (free, no key)
-//   Odds                → the-odds-api.com (free, key required)
+//   Fixtures + Standings → football-data.org (free tier, key required)
+//   Odds                 → the-odds-api.com (free tier, key required)
 
 import { getStore } from "@netlify/blobs";
 
-const OPENFOOTBALL_BASE =
-  "https://raw.githubusercontent.com/openfootball/worldcup.json/master/2026";
+const FD_BASE = "https://api.football-data.org/v4";
 const ODDS_BASE = "https://api.the-odds-api.com/v4";
 
 // ─── Banter moment templates ──────────────────────────────────────────────────
@@ -44,9 +41,16 @@ function generateMoment({ type, team, participant, opponent, score }) {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-async function fetchJSON(url) {
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`Fetch ${url} → ${res.status}`);
+async function fdGet(path) {
+  const res = await fetch(`${FD_BASE}${path}`, {
+    headers: { "X-Auth-Token": process.env.FOOTBALL_DATA_KEY },
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(
+      `football-data ${path} → ${res.status}: ${text.slice(0, 200)}`,
+    );
+  }
   return res.json();
 }
 
@@ -59,28 +63,33 @@ async function oddsGet(path, params = {}) {
   return res.json();
 }
 
-// openfootball round name → our status + round label
-function parseMatch(m) {
-  const hasScore = m.score && m.score.ft && m.score.ft.length === 2;
-  const isGroup =
-    m.group != null ||
-    (m.round && m.round.toLowerCase().startsWith("matchday"));
+// Convert football-data status to our short codes
+function parseStatus(s) {
+  if (s === "FINISHED") return "FT";
+  if (s === "IN_PLAY") return "1H";
+  if (s === "PAUSED") return "HT";
+  if (s === "TIMED" || s === "SCHEDULED") return "NS";
+  return "NS";
+}
 
-  // Build a normalised date string (openfootball gives "2026-06-11")
-  const date = m.date
-    ? `${m.date}T${(m.time || "00:00").replace(/\s.*$/, "")}:00Z`
-    : null;
-
+// Convert UTC date string to BST display string for storage
+// We store the raw UTC ISO string and convert in the frontend
+function parseFixture(m) {
+  const isGroup = m.stage === "GROUP_STAGE";
   return {
-    id: `${m.date}-${m.team1}-${m.team2}`.replace(/\s+/g, "-"),
-    date,
-    status: hasScore ? "FT" : "NS",
-    homeTeam: m.team1,
-    awayTeam: m.team2,
-    homeScore: hasScore ? m.score.ft[0] : null,
-    awayScore: hasScore ? m.score.ft[1] : null,
-    round: isGroup ? (m.group ? `Group ${m.group}` : m.round) : m.round || "",
-    venue: m.stadium || "",
+    id: m.id,
+    date: m.utcDate, // always stored as UTC ISO string
+    status: parseStatus(m.status),
+    homeTeam: m.homeTeam?.name,
+    awayTeam: m.awayTeam?.name,
+    homeScore: m.score?.fullTime?.home ?? null,
+    awayScore: m.score?.fullTime?.away ?? null,
+    round: isGroup
+      ? m.group
+        ? `Group ${m.group.replace("GROUP_", "").replace("GROUP ", "").replace("Group_", "")}`
+        : "Group Stage"
+      : m.stage || m.round || "",
+    venue: m.venue || "",
     isGroup,
   };
 }
@@ -106,9 +115,8 @@ export default async function handler(req) {
 
     // ── 1. Fixtures ───────────────────────────────────────────────────────────
     log.push("Fetching fixtures...");
-    const rawData = await fetchJSON(`${OPENFOOTBALL_BASE}/worldcup.json`);
-    const matches = rawData.matches || [];
-    const fixtures = matches.map(parseMatch);
+    const matchData = await fdGet("/competitions/WC/matches");
+    const fixtures = (matchData.matches || []).map(parseFixture);
     await store.setJSON("fixtures", { fixtures, updatedAt: now.toISOString() });
     log.push(`Stored ${fixtures.length} fixtures`);
 
@@ -116,84 +124,29 @@ export default async function handler(req) {
     if (!isLivePoll) {
       log.push("Fetching standings...");
       try {
-        const groupsRaw = await fetchJSON(
-          `${OPENFOOTBALL_BASE}/worldcup.groups.json`,
-        );
+        const standData = await fdGet("/competitions/WC/standings");
         const groups = {};
 
-        // openfootball groups format: { "groups": [{ "name": "Group A", "teams": [...] }] }
-        // But we can also compute standings from results ourselves as a fallback
-        const groupList = groupsRaw.groups || [];
-
-        if (groupList.length) {
-          groupList.forEach((g) => {
-            const groupName = g.name || `Group ${g.key}`;
-            // Compute standings from fixtures we already have
-            const groupFixtures = fixtures.filter(
-              (f) => f.round === groupName && f.status === "FT",
-            );
-            const teamStats = {};
-
-            // Seed teams
-            (g.teams || []).forEach((t) => {
-              teamStats[t] = {
-                team: t,
-                pts: 0,
-                played: 0,
-                won: 0,
-                drawn: 0,
-                lost: 0,
-                gf: 0,
-                ga: 0,
-                gd: 0,
-                form: "",
-              };
-            });
-
-            // Calculate from results
-            groupFixtures.forEach((f) => {
-              const h = teamStats[f.homeTeam];
-              const a = teamStats[f.awayTeam];
-              if (!h || !a) return;
-              h.played++;
-              a.played++;
-              h.gf += f.homeScore;
-              h.ga += f.awayScore;
-              a.gf += f.awayScore;
-              a.ga += f.homeScore;
-              if (f.homeScore > f.awayScore) {
-                h.won++;
-                h.pts += 3;
-                a.lost++;
-                h.form += "W";
-                a.form += "L";
-              } else if (f.homeScore < f.awayScore) {
-                a.won++;
-                a.pts += 3;
-                h.lost++;
-                a.form += "W";
-                h.form += "L";
-              } else {
-                h.drawn++;
-                h.pts++;
-                a.drawn++;
-                a.pts++;
-                h.form += "D";
-                a.form += "D";
-              }
-            });
-
-            // Sort by pts → gd → gf
-            const sorted = Object.values(teamStats)
-              .sort(
-                (a, b) =>
-                  b.pts - a.pts || b.gf - b.ga - (a.gf - a.ga) || b.gf - a.gf,
-              )
-              .map((t, i) => ({ ...t, rank: i + 1, gd: t.gf - t.ga }));
-
-            groups[groupName] = sorted;
-          });
-        }
+        (standData.standings || []).forEach((stage) => {
+          if (stage.type !== "TOTAL") return;
+          const groupName = stage.group
+            ? `Group ${stage.group.replace("GROUP_", "").replace("GROUP ", "")}`
+            : "Standings";
+          groups[groupName] = (stage.table || []).map((row) => ({
+            team: row.team?.name,
+            logo: row.team?.crest,
+            rank: row.position,
+            pts: row.points,
+            played: row.playedGames,
+            won: row.won,
+            drawn: row.draw,
+            lost: row.lost,
+            gf: row.goalsFor,
+            ga: row.goalsAgainst,
+            gd: row.goalDifference,
+            form: row.form || "",
+          }));
+        });
 
         await store.setJSON("standings", {
           groups,
@@ -201,7 +154,7 @@ export default async function handler(req) {
         });
         log.push(`Stored ${Object.keys(groups).length} groups`);
       } catch (e) {
-        log.push(`Standings fetch failed (non-fatal): ${e.message}`);
+        log.push(`Standings failed (non-fatal): ${e.message}`);
       }
 
       // ── 3. Odds ─────────────────────────────────────────────────────────────
@@ -231,7 +184,7 @@ export default async function handler(req) {
         await store.setJSON("odds", { odds, updatedAt: now.toISOString() });
         log.push(`Stored odds for ${Object.keys(odds).length} teams`);
       } catch (e) {
-        log.push(`Odds fetch failed (non-fatal): ${e.message}`);
+        log.push(`Odds failed (non-fatal): ${e.message}`);
       }
     }
 
@@ -267,7 +220,7 @@ export default async function handler(req) {
         const loser = homeWon ? f.awayTeam : awayWon ? f.homeTeam : null;
         const isKnockout = !f.isGroup;
 
-        if (isKnockout && loser) {
+        if (isKnockout && loser)
           newMoments.push({
             id: `${momentId}-elim`,
             sourceId: `${momentId}-elim`,
@@ -280,13 +233,7 @@ export default async function handler(req) {
             timestamp: f.date,
             teams: [loser],
           });
-        }
-        if (isKnockout && winner) {
-          const stageLabel = (f.round || "")
-            .replace("Round of", "R")
-            .replace("Quarter-finals", "QF")
-            .replace("Semi-finals", "SF")
-            .replace("Final", "the Final");
+        if (isKnockout && winner)
           newMoments.push({
             id: `${momentId}-adv`,
             sourceId: `${momentId}-adv`,
@@ -295,12 +242,12 @@ export default async function handler(req) {
               type: "advancing",
               team: winner,
               participant: teamToParticipant[winner],
-              score: stageLabel,
+              score: f.round,
             }),
             timestamp: f.date,
             teams: [winner],
           });
-        }
+
         if (
           f.isGroup &&
           f.homeScore !== null &&
@@ -341,7 +288,9 @@ export default async function handler(req) {
     await store.setJSON("meta", {
       lastSync: now.toISOString(),
       hasGamesToday: gamesToday.length > 0,
-      hasLiveGames: false, // openfootball doesn't do live — poll handles nothing on game days
+      hasLiveGames: gamesToday.some(
+        (f) => f.status === "1H" || f.status === "HT",
+      ),
       gamesToday: gamesToday.length,
     });
 
