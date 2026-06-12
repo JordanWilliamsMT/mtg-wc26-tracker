@@ -10,33 +10,84 @@ const ODDS_BASE = "https://api.the-odds-api.com/v4";
 
 // ─── Banter moment templates ──────────────────────────────────────────────────
 
-function generateMoment({ type, team, participant, opponent, score }) {
-  const templates = {
-    eliminated: [
-      `💀 ${team} are OUT. ${participant ? `Absolutely gutting for ${participant} — pour one out.` : "Someone just had their dreams crushed."}`,
-      `⚰️ RIP ${team}. ${participant ? `${participant} can go home early. Brutal.` : "Another one bites the dust."}`,
-      `🪦 ${team} eliminated. ${participant ? `${participant} is now just here for the vibes.` : "The dream is dead."}`,
-      `😬 ${team} bottle it. ${participant ? `${participant} didn't even make it to the good bit. Rough.` : "Gone. Just like that."}`,
-    ],
-    advancing: [
-      `🔥 ${team} through to the ${score}! ${participant ? `${participant} is absolutely buzzing.` : "Still alive!"}`,
-      `✅ ${team} progress to the ${score}. ${participant ? `Good times for ${participant}.` : "Keep the dream alive."}`,
-      `🚀 ${team} marching on to the ${score}! ${participant ? `${participant} can sleep easy tonight.` : ""}`,
-    ],
-    winner: [
-      `🏆 ${team} ARE WORLD CHAMPIONS! ${participant ? `${participant} WINS THE SWEEPSTAKE! 🎉🎉🎉` : "What a tournament!"}`,
-    ],
-    goodGame: [
-      `⚽ ${team} ${score} ${opponent} — what a game!`,
-      `🎉 ${score} — ${team} vs ${opponent}. Scenes.`,
-    ],
-    upset: [
-      `😱 UPSET ALERT: ${opponent} just beat ${team}! ${participant ? `${participant} did NOT see that coming.` : "Nobody saw that coming."}`,
-      `🤯 ${opponent} knocked out ${team}?! ${participant ? `${participant} is fuming.` : "Chaos reigns."}`,
-    ],
-  };
-  const list = templates[type] || templates.goodGame;
-  return list[Math.floor(Math.random() * list.length)];
+function pick(arr) {
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+
+function generateMoment({
+  type,
+  team,
+  participant,
+  opponent,
+  homeScore,
+  awayScore,
+  isHome,
+}) {
+  const score = `${homeScore}–${awayScore}`;
+  const winnerScore = isHome ? homeScore : awayScore;
+  const loserScore = isHome ? awayScore : homeScore;
+  const diff = Math.abs(homeScore - awayScore);
+
+  switch (type) {
+    case "win_big":
+      return pick([
+        `🔥 ${team} absolutely batter ${opponent} ${score}. ${participant ? `${participant} is over the moon.` : "Statement result."}`,
+        `💥 ${score}! ${team} are not messing about. ${participant ? `${participant} can't stop smiling.` : "Ruthless."}`,
+        `🤩 ${team} put ${diff} past ${opponent}. ${participant ? `${participant} doing a little dance at their desk.` : "Dominant."}`,
+      ]);
+
+    case "win":
+      return pick([
+        `✅ ${team} beat ${opponent} ${score}. ${participant ? `${participant} will take that.` : "Three points."}`,
+        `👊 ${team} grind out a ${score} win vs ${opponent}. ${participant ? `${participant} breathing again.` : "Job done."}`,
+        `⚽ ${score} — ${team} see off ${opponent}. ${participant ? `Good day for ${participant}.` : ""}`,
+      ]);
+
+    case "draw":
+      return pick([
+        `🤝 ${team} and ${opponent} share the spoils. ${score}. ${participant ? `${participant} not thrilled.` : "A point each."}`,
+        `😐 ${score} — ${team} vs ${opponent}. Could've been worse. Could've been better. ${participant ? `${participant} shrugs.` : ""}`,
+        `🥱 ${team} ${score} ${opponent}. Boring draw. ${participant ? `${participant} needs a lie down.` : ""}`,
+      ]);
+
+    case "loss":
+      return pick([
+        `😬 ${team} lose ${score} to ${opponent}. ${participant ? `${participant} is not having a good time.` : "Ouch."}`,
+        `💀 ${team} get done ${score}. ${participant ? `${participant} staring at the wall.` : "Rough."}`,
+        `📉 ${opponent} beat ${team} ${score}. ${participant ? `Things are looking grim for ${participant}.` : ""}`,
+      ]);
+
+    case "loss_big":
+      return pick([
+        `😱 ${team} absolutely collapse — ${score} to ${opponent}. ${participant ? `${participant} has left the building.` : "Carnage."}`,
+        `⚰️ ${score}. ${team} got destroyed. ${participant ? `${participant} is in full crisis mode.` : "Send help."}`,
+        `🪦 RIP ${team}. ${opponent} put ${diff} past them. ${participant ? `${participant} not answering messages.` : "Embarrassing."}`,
+      ]);
+
+    case "eliminated":
+      return pick([
+        `💀 ${team} are OUT of the World Cup. ${participant ? `Absolutely gutting for ${participant} — pour one out.` : "Someone just had their dreams crushed."}`,
+        `⚰️ RIP ${team}. ${participant ? `${participant} can go home early. Brutal.` : "Another one bites the dust."}`,
+        `🪦 ${team} eliminated. ${participant ? `${participant} is now just here for the vibes.` : "The dream is dead."}`,
+        `😬 ${team} bottle it and go home. ${participant ? `${participant} didn't even make it to the good bit. Rough.` : "Gone. Just like that."}`,
+      ]);
+
+    case "advancing":
+      return pick([
+        `🔥 ${team} through to the ${opponent}! ${participant ? `${participant} is absolutely buzzing.` : "Still alive!"}`,
+        `✅ ${team} progress to the ${opponent}. ${participant ? `Good times for ${participant}.` : "Keep the dream alive."}`,
+        `🚀 ${team} marching on to the ${opponent}! ${participant ? `${participant} can sleep easy tonight.` : ""}`,
+      ]);
+
+    case "winner":
+      return pick([
+        `🏆 ${team} ARE WORLD CHAMPIONS! ${participant ? `${participant} WINS THE SWEEPSTAKE! 🎉🎉🎉` : "What a tournament!"}`,
+        `👑 ${team} lift the trophy! ${participant ? `${participant} — get your money! 🎉` : "Champions of the world!"}`,
+      ]);
+
+    default:
+      return `⚽ ${team} ${score} ${opponent}`;
+  }
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -63,7 +114,6 @@ async function oddsGet(path, params = {}) {
   return res.json();
 }
 
-// Convert football-data status to our short codes
 function parseStatus(s) {
   if (s === "FINISHED") return "FT";
   if (s === "IN_PLAY") return "1H";
@@ -72,23 +122,20 @@ function parseStatus(s) {
   return "NS";
 }
 
-// Convert UTC date string to BST display string for storage
-// We store the raw UTC ISO string and convert in the frontend
 function parseFixture(m) {
   const isGroup = m.stage === "GROUP_STAGE";
+  const group = m.group
+    ? `Group ${m.group.replace("GROUP_", "").replace("GROUP ", "")}`
+    : null;
   return {
     id: m.id,
-    date: m.utcDate, // always stored as UTC ISO string
+    date: m.utcDate,
     status: parseStatus(m.status),
     homeTeam: m.homeTeam?.name,
     awayTeam: m.awayTeam?.name,
     homeScore: m.score?.fullTime?.home ?? null,
     awayScore: m.score?.fullTime?.away ?? null,
-    round: isGroup
-      ? m.group
-        ? `Group ${m.group.replace("GROUP_", "").replace("GROUP ", "").replace("Group_", "")}`
-        : "Group Stage"
-      : m.stage || m.round || "",
+    round: isGroup ? group || "Group Stage" : m.stage || "",
     venue: m.venue || "",
     isGroup,
   };
@@ -126,7 +173,6 @@ export default async function handler(req) {
       try {
         const standData = await fdGet("/competitions/WC/standings");
         const groups = {};
-
         (standData.standings || []).forEach((stage) => {
           if (stage.type !== "TOTAL") return;
           const groupName = stage.group
@@ -147,7 +193,6 @@ export default async function handler(req) {
             form: row.form || "",
           }));
         });
-
         await store.setJSON("standings", {
           groups,
           updatedAt: now.toISOString(),
@@ -202,6 +247,7 @@ export default async function handler(req) {
       existingMoments.map((m) => m.sourceId).filter(Boolean),
     );
 
+    // Build lookup: team name → participant name (for both teams)
     const teamToParticipant = {};
     participants.forEach((p) => {
       if (p.teams?.[0]) teamToParticipant[p.teams[0]] = p.name;
@@ -209,18 +255,126 @@ export default async function handler(req) {
     });
 
     const newMoments = [];
+
     fixtures
-      .filter((f) => f.status === "FT")
+      .filter((f) => f.status === "FT" && f.homeScore !== null)
       .forEach((f) => {
         const momentId = `result-${f.id}`;
         if (seenIds.has(momentId)) return;
-        const homeWon = f.homeScore > f.awayScore;
-        const awayWon = f.awayScore > f.homeScore;
-        const winner = homeWon ? f.homeTeam : awayWon ? f.awayTeam : null;
-        const loser = homeWon ? f.awayTeam : awayWon ? f.homeTeam : null;
-        const isKnockout = !f.isGroup;
 
-        if (isKnockout && loser)
+        const { homeTeam, awayTeam, homeScore, awayScore, isGroup, round } = f;
+        const diff = Math.abs(homeScore - awayScore);
+        const homeWon = homeScore > awayScore;
+        const awayWon = awayScore > homeScore;
+        const isDraw = homeScore === awayScore;
+        const homeP = teamToParticipant[homeTeam];
+        const awayP = teamToParticipant[awayTeam];
+
+        if (isGroup) {
+          // Every group game gets a moment
+          // Home team perspective
+          if (homeWon) {
+            newMoments.push({
+              id: `${momentId}-h`,
+              sourceId: `${momentId}-h`,
+              type: diff >= 3 ? "win_big" : "win",
+              text: generateMoment({
+                type: diff >= 3 ? "win_big" : "win",
+                team: homeTeam,
+                opponent: awayTeam,
+                participant: homeP,
+                homeScore,
+                awayScore,
+                isHome: true,
+              }),
+              timestamp: f.date,
+              teams: [homeTeam],
+            });
+            // Away team loss
+            newMoments.push({
+              id: `${momentId}-a`,
+              sourceId: `${momentId}-a`,
+              type: diff >= 3 ? "loss_big" : "loss",
+              text: generateMoment({
+                type: diff >= 3 ? "loss_big" : "loss",
+                team: awayTeam,
+                opponent: homeTeam,
+                participant: awayP,
+                homeScore: awayScore,
+                awayScore: homeScore,
+                isHome: true,
+              }),
+              timestamp: f.date,
+              teams: [awayTeam],
+            });
+          } else if (awayWon) {
+            newMoments.push({
+              id: `${momentId}-a`,
+              sourceId: `${momentId}-a`,
+              type: diff >= 3 ? "win_big" : "win",
+              text: generateMoment({
+                type: diff >= 3 ? "win_big" : "win",
+                team: awayTeam,
+                opponent: homeTeam,
+                participant: awayP,
+                homeScore: awayScore,
+                awayScore: homeScore,
+                isHome: true,
+              }),
+              timestamp: f.date,
+              teams: [awayTeam],
+            });
+            newMoments.push({
+              id: `${momentId}-h`,
+              sourceId: `${momentId}-h`,
+              type: diff >= 3 ? "loss_big" : "loss",
+              text: generateMoment({
+                type: diff >= 3 ? "loss_big" : "loss",
+                team: homeTeam,
+                opponent: awayTeam,
+                participant: homeP,
+                homeScore,
+                awayScore,
+                isHome: true,
+              }),
+              timestamp: f.date,
+              teams: [homeTeam],
+            });
+          } else {
+            // Draw — one moment referencing the participant with most to lose
+            const participant = homeP || awayP;
+            const team = homeP ? homeTeam : awayTeam;
+            const opp = homeP ? awayTeam : homeTeam;
+            newMoments.push({
+              id: momentId,
+              sourceId: momentId,
+              type: "draw",
+              text: generateMoment({
+                type: "draw",
+                team,
+                opponent: opp,
+                participant,
+                homeScore,
+                awayScore,
+                isHome: true,
+              }),
+              timestamp: f.date,
+              teams: [homeTeam, awayTeam],
+            });
+          }
+        } else {
+          // Knockout — elimination + advancing moments
+          const winner = homeWon ? homeTeam : awayTeam;
+          const loser = homeWon ? awayTeam : homeTeam;
+          const winP = homeWon ? homeP : awayP;
+          const loseP = homeWon ? awayP : homeP;
+          const stageLabel = round
+            .replace("ROUND_OF_32", "R32")
+            .replace("ROUND_OF_16", "R16")
+            .replace("QUARTER_FINALS", "QF")
+            .replace("SEMI_FINALS", "SF")
+            .replace("FINAL", "the Final");
+
           newMoments.push({
             id: `${momentId}-elim`,
             sourceId: `${momentId}-elim`,
@@ -228,12 +382,13 @@ export default async function handler(req) {
             text: generateMoment({
               type: "eliminated",
               team: loser,
-              participant: teamToParticipant[loser],
+              participant: loseP,
+              homeScore,
+              awayScore,
             }),
             timestamp: f.date,
             teams: [loser],
           });
-        if (isKnockout && winner)
           newMoments.push({
             id: `${momentId}-adv`,
             sourceId: `${momentId}-adv`,
@@ -241,38 +396,37 @@ export default async function handler(req) {
             text: generateMoment({
               type: "advancing",
               team: winner,
-              participant: teamToParticipant[winner],
-              score: f.round,
+              opponent: stageLabel,
+              participant: winP,
+              homeScore,
+              awayScore,
             }),
             timestamp: f.date,
             teams: [winner],
           });
 
-        if (
-          f.isGroup &&
-          f.homeScore !== null &&
-          Math.abs(f.homeScore - f.awayScore) >= 3
-        ) {
-          newMoments.push({
-            id: momentId,
-            sourceId: momentId,
-            type: "goodGame",
-            text: generateMoment({
-              type: "goodGame",
-              team: f.homeTeam,
-              opponent: f.awayTeam,
-              score: `${f.homeScore}–${f.awayScore}`,
-            }),
-            timestamp: f.date,
-            teams: [f.homeTeam, f.awayTeam],
-          });
+          // Winner of the whole thing
+          if (round === "FINAL" && winner) {
+            newMoments.push({
+              id: `${momentId}-champ`,
+              sourceId: `${momentId}-champ`,
+              type: "winner",
+              text: generateMoment({
+                type: "winner",
+                team: winner,
+                participant: winP,
+              }),
+              timestamp: f.date,
+              teams: [winner],
+            });
+          }
         }
       });
 
     if (newMoments.length) {
       const allMoments = [...newMoments, ...existingMoments]
         .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
-        .slice(0, 50);
+        .slice(0, 100);
       await store.setJSON("moments", {
         moments: allMoments,
         updatedAt: now.toISOString(),
