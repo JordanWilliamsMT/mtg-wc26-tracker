@@ -8,8 +8,6 @@ import { getStore } from "@netlify/blobs";
 const FD_BASE = "https://api.football-data.org/v4";
 const ODDS_BASE = "https://api.the-odds-api.com/v4";
 
-// ─── Banter moment templates ──────────────────────────────────────────────────
-
 function pick(arr) {
   return arr[Math.floor(Math.random() * arr.length)];
 }
@@ -21,76 +19,51 @@ function generateMoment({
   opponent,
   homeScore,
   awayScore,
-  isHome,
+  loserParticipant,
 }) {
   const score = `${homeScore}–${awayScore}`;
-  const winnerScore = isHome ? homeScore : awayScore;
-  const loserScore = isHome ? awayScore : homeScore;
   const diff = Math.abs(homeScore - awayScore);
 
   switch (type) {
     case "win_big":
       return pick([
-        `🔥 ${team} absolutely batter ${opponent} ${score}. ${participant ? `${participant} is over the moon.` : "Statement result."}`,
-        `💥 ${score}! ${team} are not messing about. ${participant ? `${participant} can't stop smiling.` : "Ruthless."}`,
-        `🤩 ${team} put ${diff} past ${opponent}. ${participant ? `${participant} doing a little dance at their desk.` : "Dominant."}`,
+        `🔥 ${team} absolutely batter ${opponent} ${score}.${participant ? ` ${participant} is over the moon.` : ""}${loserParticipant ? ` ${loserParticipant} wants the ground to swallow them.` : ""}`,
+        `💥 ${score}! ${team} are not messing about.${participant ? ` ${participant} doing a little dance at their desk.` : ""}${loserParticipant ? ` ${loserParticipant} in shambles.` : ""}`,
       ]);
-
     case "win":
       return pick([
-        `✅ ${team} beat ${opponent} ${score}. ${participant ? `${participant} will take that.` : "Three points."}`,
-        `👊 ${team} grind out a ${score} win vs ${opponent}. ${participant ? `${participant} breathing again.` : "Job done."}`,
-        `⚽ ${score} — ${team} see off ${opponent}. ${participant ? `Good day for ${participant}.` : ""}`,
+        `✅ ${team} beat ${opponent} ${score}.${participant ? ` ${participant} will take that.` : ""}${loserParticipant ? ` Tough luck for ${loserParticipant}.` : ""}`,
+        `⚽ ${score} — ${team} see off ${opponent}.${participant ? ` Good day for ${participant}.` : ""}${loserParticipant ? ` Bad day for ${loserParticipant}.` : ""}`,
+        `👊 ${team} grind out a ${score} win vs ${opponent}.${participant ? ` ${participant} breathing again.` : ""}`,
       ]);
-
     case "draw":
       return pick([
-        `🤝 ${team} and ${opponent} share the spoils. ${score}. ${participant ? `${participant} not thrilled.` : "A point each."}`,
-        `😐 ${score} — ${team} vs ${opponent}. Could've been worse. Could've been better. ${participant ? `${participant} shrugs.` : ""}`,
-        `🥱 ${team} ${score} ${opponent}. Boring draw. ${participant ? `${participant} needs a lie down.` : ""}`,
+        `🤝 ${team} and ${opponent} share the spoils ${score}.${participant ? ` ${participant} not thrilled.` : ""}${loserParticipant ? ` ${loserParticipant} not thrilled either.` : ""}`,
+        `😐 ${score} — ${team} vs ${opponent}. Could've been worse. Could've been better.${participant ? ` ${participant} shrugs.` : ""}`,
+        `🥱 ${team} ${score} ${opponent}. Boring draw.${participant && loserParticipant ? ` ${participant} and ${loserParticipant} both miserable.` : ""}`,
       ]);
-
-    case "loss":
-      return pick([
-        `😬 ${team} lose ${score} to ${opponent}. ${participant ? `${participant} is not having a good time.` : "Ouch."}`,
-        `💀 ${team} get done ${score}. ${participant ? `${participant} staring at the wall.` : "Rough."}`,
-        `📉 ${opponent} beat ${team} ${score}. ${participant ? `Things are looking grim for ${participant}.` : ""}`,
-      ]);
-
-    case "loss_big":
-      return pick([
-        `😱 ${team} absolutely collapse — ${score} to ${opponent}. ${participant ? `${participant} has left the building.` : "Carnage."}`,
-        `⚰️ ${score}. ${team} got destroyed. ${participant ? `${participant} is in full crisis mode.` : "Send help."}`,
-        `🪦 RIP ${team}. ${opponent} put ${diff} past them. ${participant ? `${participant} not answering messages.` : "Embarrassing."}`,
-      ]);
-
     case "eliminated":
       return pick([
-        `💀 ${team} are OUT of the World Cup. ${participant ? `Absolutely gutting for ${participant} — pour one out.` : "Someone just had their dreams crushed."}`,
-        `⚰️ RIP ${team}. ${participant ? `${participant} can go home early. Brutal.` : "Another one bites the dust."}`,
-        `🪦 ${team} eliminated. ${participant ? `${participant} is now just here for the vibes.` : "The dream is dead."}`,
-        `😬 ${team} bottle it and go home. ${participant ? `${participant} didn't even make it to the good bit. Rough.` : "Gone. Just like that."}`,
+        `💀 ${team} are OUT of the World Cup.${participant ? ` Absolutely gutting for ${participant} — pour one out.` : " Someone just had their dreams crushed."}`,
+        `⚰️ RIP ${team}.${participant ? ` ${participant} can go home early. Brutal.` : " Another one bites the dust."}`,
+        `🪦 ${team} eliminated.${participant ? ` ${participant} is now just here for the vibes.` : " The dream is dead."}`,
+        `😬 ${team} bottle it and go home.${participant ? ` ${participant} didn't even make it to the good bit. Rough.` : " Gone. Just like that."}`,
       ]);
-
     case "advancing":
       return pick([
-        `🔥 ${team} through to the ${opponent}! ${participant ? `${participant} is absolutely buzzing.` : "Still alive!"}`,
-        `✅ ${team} progress to the ${opponent}. ${participant ? `Good times for ${participant}.` : "Keep the dream alive."}`,
-        `🚀 ${team} marching on to the ${opponent}! ${participant ? `${participant} can sleep easy tonight.` : ""}`,
+        `🔥 ${team} through to the ${opponent}!${participant ? ` ${participant} is absolutely buzzing.` : " Still alive!"}`,
+        `✅ ${team} progress to the ${opponent}.${participant ? ` Good times for ${participant}.` : " Keep the dream alive."}`,
+        `🚀 ${team} marching on to the ${opponent}!${participant ? ` ${participant} can sleep easy tonight.` : ""}`,
       ]);
-
     case "winner":
       return pick([
-        `🏆 ${team} ARE WORLD CHAMPIONS! ${participant ? `${participant} WINS THE SWEEPSTAKE! 🎉🎉🎉` : "What a tournament!"}`,
-        `👑 ${team} lift the trophy! ${participant ? `${participant} — get your money! 🎉` : "Champions of the world!"}`,
+        `🏆 ${team} ARE WORLD CHAMPIONS!${participant ? ` ${participant} WINS THE SWEEPSTAKE! 🎉🎉🎉` : " What a tournament!"}`,
+        `👑 ${team} lift the trophy!${participant ? ` ${participant} — get your money! 🎉` : " Champions of the world!"}`,
       ]);
-
     default:
       return `⚽ ${team} ${score} ${opponent}`;
   }
 }
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 async function fdGet(path) {
   const res = await fetch(`${FD_BASE}${path}`, {
@@ -140,8 +113,6 @@ function parseFixture(m) {
     isGroup,
   };
 }
-
-// ─── Main sync ────────────────────────────────────────────────────────────────
 
 export default async function handler(req) {
   if (req.method === "POST") {
@@ -233,7 +204,7 @@ export default async function handler(req) {
       }
     }
 
-    // ── 4. Moments ────────────────────────────────────────────────────────────
+    // ── 4. Moments — one post per game ────────────────────────────────────────
     log.push("Generating moments...");
     const existingData = await store
       .get("moments", { type: "json" })
@@ -247,7 +218,6 @@ export default async function handler(req) {
       existingMoments.map((m) => m.sourceId).filter(Boolean),
     );
 
-    // Build lookup: team name → participant name (for both teams)
     const teamToParticipant = {};
     participants.forEach((p) => {
       if (p.teams?.[0]) teamToParticipant[p.teams[0]] = p.name;
@@ -271,104 +241,56 @@ export default async function handler(req) {
         const awayP = teamToParticipant[awayTeam];
 
         if (isGroup) {
-          // Every group game gets a moment
-          // Home team perspective
-          if (homeWon) {
-            newMoments.push({
-              id: `${momentId}-h`,
-              sourceId: `${momentId}-h`,
-              type: diff >= 3 ? "win_big" : "win",
-              text: generateMoment({
-                type: diff >= 3 ? "win_big" : "win",
-                team: homeTeam,
-                opponent: awayTeam,
-                participant: homeP,
-                homeScore,
-                awayScore,
-                isHome: true,
-              }),
-              timestamp: f.date,
-              teams: [homeTeam],
-            });
-            // Away team loss
-            newMoments.push({
-              id: `${momentId}-a`,
-              sourceId: `${momentId}-a`,
-              type: diff >= 3 ? "loss_big" : "loss",
-              text: generateMoment({
-                type: diff >= 3 ? "loss_big" : "loss",
-                team: awayTeam,
-                opponent: homeTeam,
-                participant: awayP,
-                homeScore: awayScore,
-                awayScore: homeScore,
-                isHome: true,
-              }),
-              timestamp: f.date,
-              teams: [awayTeam],
-            });
-          } else if (awayWon) {
-            newMoments.push({
-              id: `${momentId}-a`,
-              sourceId: `${momentId}-a`,
-              type: diff >= 3 ? "win_big" : "win",
-              text: generateMoment({
-                type: diff >= 3 ? "win_big" : "win",
-                team: awayTeam,
-                opponent: homeTeam,
-                participant: awayP,
-                homeScore: awayScore,
-                awayScore: homeScore,
-                isHome: true,
-              }),
-              timestamp: f.date,
-              teams: [awayTeam],
-            });
-            newMoments.push({
-              id: `${momentId}-h`,
-              sourceId: `${momentId}-h`,
-              type: diff >= 3 ? "loss_big" : "loss",
-              text: generateMoment({
-                type: diff >= 3 ? "loss_big" : "loss",
-                team: homeTeam,
-                opponent: awayTeam,
-                participant: homeP,
-                homeScore,
-                awayScore,
-                isHome: true,
-              }),
-              timestamp: f.date,
-              teams: [homeTeam],
-            });
-          } else {
-            // Draw — one moment referencing the participant with most to lose
-            const participant = homeP || awayP;
-            const team = homeP ? homeTeam : awayTeam;
-            const opp = homeP ? awayTeam : homeTeam;
+          // One moment per game — winner is the "team", loser is "opponent"
+          // Both participants mentioned in the same post
+          if (isDraw) {
             newMoments.push({
               id: momentId,
               sourceId: momentId,
               type: "draw",
               text: generateMoment({
                 type: "draw",
-                team,
-                opponent: opp,
-                participant,
+                team: homeTeam,
+                opponent: awayTeam,
+                participant: homeP,
+                loserParticipant: homeP !== awayP ? awayP : null,
                 homeScore,
                 awayScore,
-                isHome: true,
               }),
               timestamp: f.date,
               teams: [homeTeam, awayTeam],
             });
+          } else {
+            const winner = homeWon ? homeTeam : awayTeam;
+            const loser = homeWon ? awayTeam : homeTeam;
+            const winnerP = homeWon ? homeP : awayP;
+            const loserP = homeWon ? awayP : homeP;
+            const winnerScore = homeWon ? homeScore : awayScore;
+            const loserScore = homeWon ? awayScore : homeScore;
+            newMoments.push({
+              id: momentId,
+              sourceId: momentId,
+              type: diff >= 3 ? "win_big" : "win",
+              text: generateMoment({
+                type: diff >= 3 ? "win_big" : "win",
+                team: winner,
+                opponent: loser,
+                participant: winnerP,
+                loserParticipant: winnerP !== loserP ? loserP : null,
+                homeScore: winnerScore,
+                awayScore: loserScore,
+              }),
+              timestamp: f.date,
+              teams: [winner, loser],
+            });
           }
         } else {
-          // Knockout — elimination + advancing moments
+          // Knockout — one elimination moment mentioning both
           const winner = homeWon ? homeTeam : awayTeam;
           const loser = homeWon ? awayTeam : homeTeam;
           const winP = homeWon ? homeP : awayP;
           const loseP = homeWon ? awayP : homeP;
-          const stageLabel = round
+          const stage = round
             .replace("ROUND_OF_32", "R32")
             .replace("ROUND_OF_16", "R16")
             .replace("QUARTER_FINALS", "QF")
@@ -396,7 +318,7 @@ export default async function handler(req) {
             text: generateMoment({
               type: "advancing",
               team: winner,
-              opponent: stageLabel,
+              opponent: stage,
               participant: winP,
               homeScore,
               awayScore,
@@ -405,8 +327,7 @@ export default async function handler(req) {
             teams: [winner],
           });
 
-          // Winner of the whole thing
-          if (round === "FINAL" && winner) {
+          if (round === "FINAL") {
             newMoments.push({
               id: `${momentId}-champ`,
               sourceId: `${momentId}-champ`,

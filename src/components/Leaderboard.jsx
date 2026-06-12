@@ -112,6 +112,8 @@ export function Leaderboard({
         </div>
       )}
 
+      <FunFacts fixtures={fixtures} participants={participants} />
+
       {/* Main leaderboard header */}
       <div
         style={{
