@@ -28,10 +28,8 @@ const TABS = [
 export default function App() {
   const [tab, setTab] = useState("leaderboard");
   const data = useData();
-
   const leaderboard = data.getLeaderboard();
   const tonightStakes = data.getTonightStakes();
-  const lastTeamStanding = data.getLastTeamStanding();
   const liveCount = data.fixtures.filter((f) =>
     ["1H", "HT", "2H", "ET", "P"].includes(f.status),
   ).length;

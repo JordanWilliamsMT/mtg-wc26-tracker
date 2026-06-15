@@ -52,7 +52,6 @@ export function Leaderboard({
   const maxChance = leaderboard[0]?.winChance || 1;
   const top5 = leaderboard.slice(0, 5);
   const rest = leaderboard.slice(5);
-  const ltsLeader = lastTeamStanding[0];
 
   return (
     <div>
