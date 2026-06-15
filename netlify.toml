@@ -10,7 +10,7 @@
 
 # Scheduled sync — every day at 7am UTC
 [functions."sync"]
-  schedule = "0 7 * * *"
+  schedule = "0 6 * * *"
 
 # During tournament: also sync every 5 mins (Netlify will only run if today has games)
 # This is handled inside the sync function itself via a lightweight check
