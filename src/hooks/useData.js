@@ -102,12 +102,21 @@ export function useData() {
               : f.awayScore < f.homeScore;
           return false;
         };
-        const eliminated = (p.teams || []).map((t) =>
-          // A team is out if they lost in a knockout round
-          fixtureList.some(
+        const eliminated = (p.teams || []).map((t) => {
+          // Out if they lost a knockout match...
+          const lostKO = fixtureList.some(
             (f) => finished(f) && isKO(f) && teamLostMatch(f, t),
-          ),
-        );
+          );
+          // ...or never made the knockout stage at all (group-stage exit).
+          // Once the R32 draw is populated, any team absent from every
+          // knockout fixture didn't qualify.
+          const koFixtures = fixtureList.filter(isKO);
+          const koStarted = koFixtures.some((f) => f.homeTeam && f.awayTeam);
+          const inKnockout = koFixtures.some(
+            (f) => f.homeTeam === t || f.awayTeam === t,
+          );
+          return lostKO || (koStarted && !inKnockout);
+        });
 
         // Last team standing: furthest round reached
         const rounds = [
