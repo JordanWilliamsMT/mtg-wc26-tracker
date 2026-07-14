@@ -86,40 +86,60 @@ export function useData() {
 
         // Is each team still alive?
         const fixtureList = fixtures?.fixtures || [];
-        const eliminated = (p.teams || []).map((t) => {
+        const isKO = (f) =>
+          !f.round?.toLowerCase().includes("group") && !f.isGroup;
+        const finished = (f) =>
+          f.status === "FT" || f.status === "AET" || f.status === "PEN";
+        // Prefer the API winner field — score comparison misses penalty shootouts
+        const teamLostMatch = (f, t) => {
+          if (f.homeTeam === t)
+            return f.winner
+              ? f.winner === "AWAY_TEAM"
+              : f.homeScore < f.awayScore;
+          if (f.awayTeam === t)
+            return f.winner
+              ? f.winner === "HOME_TEAM"
+              : f.awayScore < f.homeScore;
+          return false;
+        };
+        const eliminated = (p.teams || []).map((t) =>
           // A team is out if they lost in a knockout round
-          const lost = fixtureList.some(
-            (f) =>
-              (f.status === "FT" || f.status === "AET" || f.status === "PEN") &&
-              !f.round?.toLowerCase().includes("group") &&
-              ((f.homeTeam === t && f.homeScore < f.awayScore) ||
-                (f.awayTeam === t && f.awayScore < f.homeScore)),
-          );
-          return lost;
-        });
+          fixtureList.some(
+            (f) => finished(f) && isKO(f) && teamLostMatch(f, t),
+          ),
+        );
 
         // Last team standing: furthest round reached
         const rounds = [
-          "Group Stage",
+          "Group",
           "Round of 32",
           "Round of 16",
           "Quarter-finals",
           "Semi-finals",
           "Final",
-          "World Cup Final",
         ];
+        const canonical = (round) => {
+          if (!round) return null;
+          const r = round.toUpperCase();
+          if (r.includes("GROUP")) return "Group";
+          if (r.includes("32")) return "Round of 32";
+          if (r.includes("16")) return "Round of 16";
+          if (r.includes("QUARTER")) return "Quarter-finals";
+          if (r.includes("SEMI")) return "Semi-finals";
+          if (r.includes("THIRD") || r.includes("PLACE")) return "Semi-finals";
+          if (r.includes("FINAL")) return "Final";
+          return null;
+        };
         const furthestRound = (p.teams || []).reduce((best, t) => {
           const teamMatches = fixtureList.filter(
-            (f) =>
-              (f.status === "FT" || f.status === "AET" || f.status === "PEN") &&
-              (f.homeTeam === t || f.awayTeam === t),
+            (f) => finished(f) && (f.homeTeam === t || f.awayTeam === t),
           );
           if (!teamMatches.length) return best;
-          const lastMatch = teamMatches[teamMatches.length - 1];
-          const roundIdx = rounds.findIndex((r) =>
-            lastMatch.round?.includes(r.split(" ")[0]),
-          );
-          return roundIdx > best ? roundIdx : best;
+          const teamBest = teamMatches.reduce((idx, m) => {
+            const roundIdx = rounds.indexOf(canonical(m.round));
+            return roundIdx > idx ? roundIdx : idx;
+          }, -1);
+          return teamBest > best ? teamBest : best;
         }, -1);
 
         return {

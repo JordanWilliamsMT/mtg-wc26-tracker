@@ -95,6 +95,19 @@ function parseStatus(s) {
   return "NS";
 }
 
+// football-data.org returns stages as uppercase enums — normalize to display names
+const STAGE_NAMES = {
+  LAST_64: "Round of 64",
+  LAST_32: "Round of 32",
+  ROUND_OF_32: "Round of 32",
+  LAST_16: "Round of 16",
+  ROUND_OF_16: "Round of 16",
+  QUARTER_FINALS: "Quarter-finals",
+  SEMI_FINALS: "Semi-finals",
+  THIRD_PLACE: "Third place",
+  FINAL: "Final",
+};
+
 function parseFixture(m) {
   const isGroup = m.stage === "GROUP_STAGE";
   const group = m.group
@@ -108,7 +121,14 @@ function parseFixture(m) {
     awayTeam: m.awayTeam?.name,
     homeScore: m.score?.fullTime?.home ?? null,
     awayScore: m.score?.fullTime?.away ?? null,
-    round: isGroup ? group || "Group Stage" : m.stage || "",
+    // Authoritative result — covers extra time + penalty shootouts
+    // "HOME_TEAM" | "AWAY_TEAM" | "DRAW" | null
+    winner: m.score?.winner || null,
+    duration: m.score?.duration || "REGULAR",
+    penalties: m.score?.penalties ?? null,
+    round: isGroup
+      ? group || "Group Stage"
+      : STAGE_NAMES[m.stage] || m.stage || "",
     venue: m.venue || "",
     isGroup,
   };
@@ -232,11 +252,20 @@ export default async function handler(req) {
         const momentId = `result-${f.id}`;
         if (seenIds.has(momentId)) return;
 
-        const { homeTeam, awayTeam, homeScore, awayScore, isGroup, round } = f;
+        const {
+          homeTeam,
+          awayTeam,
+          homeScore,
+          awayScore,
+          isGroup,
+          round,
+          winner,
+        } = f;
         const diff = Math.abs(homeScore - awayScore);
-        const homeWon = homeScore > awayScore;
-        const awayWon = awayScore > homeScore;
-        const isDraw = homeScore === awayScore;
+        // Prefer the API's winner field — score comparison fails for penalty shootouts
+        const homeWon = winner ? winner === "HOME_TEAM" : homeScore > awayScore;
+        const awayWon = winner ? winner === "AWAY_TEAM" : awayScore > homeScore;
+        const isDraw = !homeWon && !awayWon;
         const homeP = teamToParticipant[homeTeam];
         const awayP = teamToParticipant[awayTeam];
 
@@ -286,16 +315,18 @@ export default async function handler(req) {
           }
         } else {
           // Knockout — one elimination moment mentioning both
-          const winner = homeWon ? homeTeam : awayTeam;
+          const winnerTeam = homeWon ? homeTeam : awayTeam;
           const loser = homeWon ? awayTeam : homeTeam;
           const winP = homeWon ? homeP : awayP;
           const loseP = homeWon ? awayP : homeP;
-          const stage = round
-            .replace("ROUND_OF_32", "R32")
-            .replace("ROUND_OF_16", "R16")
-            .replace("QUARTER_FINALS", "QF")
-            .replace("SEMI_FINALS", "SF")
-            .replace("FINAL", "the Final");
+          // Round they're advancing INTO
+          const nextStage = {
+            "Round of 64": "Round of 32",
+            "Round of 32": "Round of 16",
+            "Round of 16": "Quarter-finals",
+            "Quarter-finals": "Semi-finals",
+            "Semi-finals": "the Final",
+          }[round];
 
           newMoments.push({
             id: `${momentId}-elim`,
@@ -311,34 +342,36 @@ export default async function handler(req) {
             timestamp: f.date,
             teams: [loser],
           });
-          newMoments.push({
-            id: `${momentId}-adv`,
-            sourceId: `${momentId}-adv`,
-            type: "advancing",
-            text: generateMoment({
+          if (nextStage) {
+            newMoments.push({
+              id: `${momentId}-adv`,
+              sourceId: `${momentId}-adv`,
               type: "advancing",
-              team: winner,
-              opponent: stage,
-              participant: winP,
-              homeScore,
-              awayScore,
-            }),
-            timestamp: f.date,
-            teams: [winner],
-          });
+              text: generateMoment({
+                type: "advancing",
+                team: winnerTeam,
+                opponent: nextStage,
+                participant: winP,
+                homeScore,
+                awayScore,
+              }),
+              timestamp: f.date,
+              teams: [winnerTeam],
+            });
+          }
 
-          if (round === "FINAL") {
+          if (round === "Final") {
             newMoments.push({
               id: `${momentId}-champ`,
               sourceId: `${momentId}-champ`,
               type: "winner",
               text: generateMoment({
                 type: "winner",
-                team: winner,
+                team: winnerTeam,
                 participant: winP,
               }),
               timestamp: f.date,
-              teams: [winner],
+              teams: [winnerTeam],
             });
           }
         }

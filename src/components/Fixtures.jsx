@@ -12,12 +12,14 @@ const ROUND_ORDER = [
 
 function roundLabel(round) {
   if (!round) return "";
-  if (round.includes("Group")) return round;
-  if (round.includes("32")) return "Round of 32";
-  if (round.includes("16")) return "Round of 16";
-  if (round.includes("Quarter")) return "Quarter-final";
-  if (round.includes("Semi")) return "Semi-final";
-  if (round.includes("Final")) return "Final";
+  const r = round.toUpperCase();
+  if (r.includes("GROUP")) return round;
+  if (r.includes("32")) return "Round of 32";
+  if (r.includes("16")) return "Round of 16";
+  if (r.includes("QUARTER")) return "Quarter-final";
+  if (r.includes("SEMI")) return "Semi-final";
+  if (r.includes("THIRD") || r.includes("PLACE")) return "Third place";
+  if (r.includes("FINAL")) return "Final";
   return round;
 }
 
